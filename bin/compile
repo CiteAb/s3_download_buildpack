@@ -1,0 +1,79 @@
+#!/bin/bash
+# bin/compile <build-dir> <cache-dir> <env-dir>
+
+# Public: Download the file with the given S3 key to the <build-dir>
+#
+# Params:
+#   $1 - AWS access key ID
+#   $2 - AWS secret access key
+#   $3 -
+#   $4 - the S3 key of the file to download
+#
+s3_download() {
+  local access_key_id="$1"
+  local access_key="$2"
+  local file="$4"
+
+  local content_type="binary/octet-stream"
+  local now=`TZ=GMT date -R`
+  local to_sign="GET\n\n$content_type\n$now\n/$(resource_path $file)"
+  local signature=`echo -en ${to_sign} | openssl sha1 -hmac ${access_key} -binary | base64`
+
+  curl -H "Host: s3-$(resource_host)" \
+     -H "Date: $now" \
+     -H "Content-Type: $content_type" \
+     -H "Authorization: AWS $access_key_id:$signature" \
+     $(resource_url $file)
+}
+
+# Public: Export the content of the ENV_DIR into the environment.
+#
+# NOTE: https://devcenter.heroku.com/articles/buildpack-api#bin-compile-summary
+#
+# Params:
+#   $1 - <env-dir>
+#
+export_env_dir() {
+  env_dir=$1
+  acceptlist_regex=${2:-'^S3_DOWNLOAD_BUILDPACK'}
+  if [ -d "$env_dir" ]; then
+    for e in $(ls $env_dir); do
+      echo "$e" | grep -E "$acceptlist_regex" &&
+      export "$e=$(cat $env_dir/$e)"
+      :
+    done
+  fi
+}
+
+resource_host() {
+  echo "$S3_DOWNLOAD_BUILDPACK_AWS_REGION.amazonaws.com"
+}
+
+# Params:
+#   $1 - the S3 key of the file to download
+#
+resource_path() {
+  echo "$S3_DOWNLOAD_BUILDPACK_BUCKET_NAME/$1"
+}
+
+# Params:
+#   $1 - the S3 key of the file to download
+#
+resource_url() {
+  echo "https://s3.$(resource_host)/$(resource_path $1)"
+}
+
+
+
+working=$(pwd)
+mkdir -p "$2"
+build=$(cd "$1/" && pwd)
+cache=$(cd "$2/" && pwd)
+export_env_dir $(cd "$3/" && pwd)
+
+cd $build
+
+for file in $S3_DOWNLOAD_BUILDPACK_FILES; do
+  echo "-----> s3 downloading $(resource_url $file)"
+  s3_download $S3_DOWNLOAD_BUILDPACK_AWS_ACCESS_KEY_ID $S3_DOWNLOAD_BUILDPACK_AWS_SECRET_ACCESS_KEY get $file > $file
+done
