@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
 # bin/detect <build-dir>
 
-if [ -f $1/.s3_download_buildpack ]; then
-  echo "s3_download_buildpack"
-  exit 0
-else
-  exit 1
-fi
+echo "s3_download_buildpack"
+exit 0
